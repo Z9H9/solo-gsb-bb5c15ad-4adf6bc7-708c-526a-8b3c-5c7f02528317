@@ -1,0 +1,16 @@
+services:
+  webhook-sandbox:
+    build: .
+    container_name: webhook-sandbox
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      # CLIENT_TIMEOUT_MS: 5000     # 投递客户端超时（毫秒）
+      # SLOW_RECEIVER_MS: 8000      # slow 接收器的延迟（毫秒）
+    volumes:
+      - webhook-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  webhook-data:

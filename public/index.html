@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Webhook 调试沙盒</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>🔗 Webhook 调试沙盒</h1>
+    <span class="subtitle">签名投递 · 指数退避重试 · 幂等校验 · 手动重放</span>
+  </header>
+
+  <main>
+    <!-- 创建事件 -->
+    <section class="card">
+      <h2>创建事件</h2>
+      <form id="event-form">
+        <div class="grid">
+          <label>事件名称
+            <input name="name" required placeholder="order.created">
+          </label>
+          <label>接收器行为
+            <select name="behavior">
+              <option value="ok">ok — 正常返回 200</option>
+              <option value="fail">fail — 始终 500（观察重试）</option>
+              <option value="flaky">flaky — 50% 概率失败</option>
+              <option value="slow">slow — 延迟 8s（触发超时重试与幂等去重）</option>
+            </select>
+          </label>
+          <label>签名密钥（留空自动生成）
+            <input name="secret" placeholder="hex 密钥">
+          </label>
+          <label>最大重试次数
+            <input name="max_retries" type="number" min="0" max="10" value="3">
+          </label>
+          <label>退避间隔（秒，指数增长基数）
+            <input name="backoff_seconds" type="number" min="0.5" max="300" step="0.5" value="2">
+          </label>
+        </div>
+        <label>Payload（JSON）
+          <textarea name="payload" rows="4" placeholder='{"order_id": 1001, "amount": 99.5}'></textarea>
+        </label>
+        <button type="submit">创建事件</button>
+        <span id="form-error" class="error"></span>
+      </form>
+    </section>
+
+    <!-- 事件列表 -->
+    <section class="card">
+      <h2>事件</h2>
+      <div id="events"><p class="muted">暂无事件</p></div>
+    </section>
+
+    <!-- 投递时间线 -->
+    <section class="card">
+      <h2>投递时间线</h2>
+      <div id="deliveries"><p class="muted">暂无投递</p></div>
+    </section>
+
+    <!-- 接收器日志 -->
+    <section class="card">
+      <h2>模拟接收器日志 <button id="clear-log" class="small">清空</button></h2>
+      <div id="receiver-log"><p class="muted">暂无记录</p></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
