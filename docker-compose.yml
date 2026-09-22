@@ -1,0 +1,19 @@
+services:
+  webhook-sandbox:
+    build: .
+    image: webhook-sandbox:latest
+    container_name: webhook-sandbox
+    ports:
+      - "3000:3000"
+    environment:
+      # The mock receiver is served by the same process; target it via loopback.
+      DEFAULT_TARGET_URL: "http://127.0.0.1:3000/receiver/webhook"
+      WORKER_TICK_MS: "250"
+      HTTP_TIMEOUT_MS: "10000"
+      SIGNATURE_TOLERANCE_SECONDS: "300"
+    volumes:
+      - webhook-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  webhook-data:

@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Webhook Sandbox — 本地 Webhook 调试沙盒</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .live { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+  .dot.paused { background: var(--yellow); }
+
+  .layout { display: grid; grid-template-columns: 340px 1fr 1fr; gap: 12px; padding: 12px 20px; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 12px; overflow: hidden;
+  }
+  .card h2 { font-size: 13px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .card .body { padding: 12px 14px; }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  input, textarea, select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px;
+    font: inherit; font-family: var(--mono); font-size: 12.5px;
+  }
+  textarea { resize: vertical; min-height: 90px; }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  button {
+    background: #21262d; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 13px; margin-top: 10px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.primary:hover { background: #388bfd; }
+  button.small { padding: 3px 9px; font-size: 12px; margin: 0; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .event-item {
+    padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .event-item:hover { background: var(--panel2); }
+  .event-item.active { background: #13243d; border-left: 3px solid var(--accent); padding-left: 11px; }
+  .event-item .name { font-weight: 600; }
+  .event-item .meta { color: var(--muted); font-size: 11.5px; font-family: var(--mono); margin-top: 2px; }
+
+  .badge {
+    display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 11px;
+    font-family: var(--mono); font-weight: 600;
+  }
+  .badge.pending   { background: #333a1a; color: #e3b341; }
+  .badge.running   { background: #1c2d4a; color: var(--accent); }
+  .badge.succeeded { background: #11361f; color: var(--green); }
+  .badge.failed    { background: #4a1f1d; color: var(--red); }
+
+  .delivery-item {
+    padding: 9px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .delivery-item:hover { background: var(--panel2); }
+  .delivery-item.active { background: #13243d; }
+  .delivery-item .info { flex: 1; min-width: 0; }
+  .delivery-item .idem {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .attempt {
+    border: 1px solid var(--border); border-radius: 8px; margin: 10px 14px;
+    background: var(--panel2);
+  }
+  .attempt .head {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .attempt .head .num { font-weight: 700; }
+  .status-code { font-family: var(--mono); font-weight: 700; }
+  .status-code.s2 { color: var(--green); } .status-code.s4 { color: var(--yellow); }
+  .status-code.s5 { color: var(--red); } .status-code.s0 { color: var(--red); }
+  .muted { color: var(--muted); font-size: 11.5px; }
+  pre {
+    margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 12px;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  details { border-top: 1px solid var(--border); }
+  details summary {
+    padding: 6px 12px; cursor: pointer; color: var(--muted); font-size: 12px; user-select: none;
+  }
+  .kv { font-family: var(--mono); font-size: 12px; padding: 8px 14px; }
+  .kv div { margin: 2px 0; }
+  .kv .k { color: var(--purple); }
+  .kv .v { color: var(--muted); word-break: break-all; }
+  .empty { color: var(--muted); text-align: center; padding: 28px 14px; font-size: 13px; }
+  .error-text { color: var(--red); font-size: 12px; margin-top: 8px; font-family: var(--mono); }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
+    font-family: var(--mono); font-size: 11.5px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .recv-row { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .recv-row .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tag { font-size: 10.5px; padding: 0 6px; border-radius: 4px; font-family: var(--mono); }
+  .tag.ok { background: #11361f; color: var(--green); }
+  .tag.no { background: #4a1f1d; color: var(--red); }
+  .tag.dup { background: #2d2410; color: #e3b341; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🪝 Webhook Sandbox</h1>
+  <span class="sub">本地 Webhook 调试沙盒 · HMAC / 幂等 / 指数退避 / 重放</span>
+  <span class="spacer"></span>
+  <span class="live"><span class="dot" id="liveDot"></span><span id="liveText">实时刷新</span></span>
+  <button class="small" id="pauseBtn">暂停</button>
+</header>
+
+<div class="layout">
+  <!-- LEFT: events -->
+  <div>
+    <div class="card">
+      <h2>创建事件</h2>
+      <div class="body">
+        <label>事件名称 *</label>
+        <input id="evName" placeholder="order.paid" />
+        <label>签名密钥（留空自动生成）</label>
+        <input id="evSecret" placeholder="whsec_..." />
+        <div class="row2">
+          <div>
+            <label>最大重试次数</label>
+            <input id="evRetries" type="number" value="3" min="0" max="20" />
+          </div>
+          <div>
+            <label>退避基数 (ms)</label>
+            <input id="evBackoff" type="number" value="1000" min="100" step="500" />
+          </div>
+        </div>
+        <label>目标 URL（留空用内置模拟接收器）</label>
+        <input id="evTarget" placeholder="http://127.0.0.1:3000/receiver/webhook" />
+        <button class="primary" id="createEvBtn">创建事件</button>
+        <div class="error-text" id="evError"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>事件列表</h2>
+      <div id="eventList"></div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: event detail + deliveries -->
+  <div>
+    <div id="eventDetail"></div>
+    <div class="card">
+      <h2>投递列表</h2>
+      <div id="deliveryList"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: delivery timeline + received log -->
+  <div>
+    <div class="card">
+      <h2>投递时间线（请求 / 响应）</h2>
+      <div id="timeline"><div class="empty">选择一条投递查看详细时间线</div></div>
+    </div>
+    <div class="card">
+      <h2>模拟接收器日志</h2>
+      <div id="recvLog"><div class="empty">暂无接收记录</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let events = [], selectedEvent = null, selectedDelivery = null;
+let deliveries = [], received = [];
+let paused = false;
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (iso) => iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false }) + '.' +
+  String(new Date(iso).getMilliseconds()).padStart(3, '0') : '';
+const short = (s, n = 14) => s ? (s.length > n ? s.slice(0, 6) + '…' + s.slice(-4) : s) : '';
+
+/* --------------------------------------------- events */
+
+async function loadEvents() {
+  events = await api('GET', '/api/events');
+  const list = $('eventList');
+  if (!events.length) {
+    list.innerHTML = '<div class="empty">还没有事件，先创建一个吧</div>';
+    return;
+  }
+  list.innerHTML = events.map((e) => `
+    <div class="event-item ${selectedEvent === e.public_id ? 'active' : ''}" data-id="${e.public_id}">
+      <div class="name">${esc(e.name)} <span class="muted">#${e.id}</span></div>
+      <div class="meta">${e.delivery_count} 条投递 · 重试 ${e.max_retries} · ${e.backoff_base_ms}ms</div>
+      <div class="meta">secret: ${esc(short(e.signing_secret, 18))}</div>
+    </div>`).join('');
+  list.querySelectorAll('.event-item').forEach((el) =>
+    el.addEventListener('click', () => { selectedEvent = el.dataset.id; selectedDelivery = null; renderAll(); }));
+}
+
+function renderEventDetail() {
+  const box = $('eventDetail');
+  const e = events.find((x) => x.public_id === selectedEvent);
+  if (!e) { box.innerHTML = ''; return; }
+  box.innerHTML = `
+    <div class="card">
+      <h2>事件：${esc(e.name)}</h2>
+      <div class="body">
+        <div class="kv">
+          <div><span class="k">event_id</span> <span class="v">${esc(e.public_id)}</span></div>
+          <div><span class="k">secret</span> <span class="v">${esc(e.signing_secret)}</span></div>
+          <div><span class="k">target</span> <span class="v">${esc(e.target_url)}</span></div>
+          <div><span class="k">max_retries</span> <span class="v">${e.max_retries}（共 ${e.max_retries + 1} 次尝试）</span></div>
+          <div><span class="k">backoff</span> <span class="v">${e.backoff_base_ms} × 2^n（上限 30 分钟）</span></div>
+        </div>
+        <label>投递 payload（JSON）</label>
+        <textarea id="dlvPayload">{
+  "order_id": "ord_1001",
+  "amount": 4200,
+  "_sim": { "scenario": "fail_500" }
+}</textarea>
+        <div class="hint">
+          <code>_sim.scenario</code> 可让模拟接收器返回：
+          <code>fail_500</code> / <code>fail_404</code> / <code>unauthorized</code> / <code>timeout</code> / <code>ok</code>；
+          <code>_sim.delay_ms</code> 延迟响应；<code>_sim.status</code> 自定义状态码。
+        </div>
+        <div class="row2">
+          <div><label>延迟投递 (ms, 可选)</label><input id="dlvDelay" type="number" min="0" placeholder="0" /></div>
+          <div><label>幂等键（可选）</label><input id="dlvIdem" placeholder="自动生成" /></div>
+        </div>
+        <div class="toolbar">
+          <button class="primary" id="sendBtn">立即投递</button>
+          <button id="sendFailBtn">投递（模拟 500，触发退避重试）</button>
+          <button id="sendTimeoutBtn">投递（模拟超时）</button>
+          <button id="deleteBtn" class="small">删除事件</button>
+        </div>
+        <div class="error-text" id="dlvError"></div>
+      </div>
+    </div>`;
+
+  $('sendBtn').onclick = () => enqueue({});
+  $('sendFailBtn').onclick = () => enqueue({ sim: 'fail_500' });
+  $('sendTimeoutBtn').onclick = () => enqueue({ sim: 'timeout' });
+  $('deleteBtn').onclick = async () => {
+    if (!confirm('删除该事件及其全部投递记录？')) return;
+    await api('DELETE', '/api/events/' + e.public_id);
+    selectedEvent = null; selectedDelivery = null;
+    renderAll();
+  };
+}
+
+async function enqueue({ sim }) {
+  const errBox = $('dlvError');
+  errBox.textContent = '';
+  let payload;
+  try {
+    const raw = $('dlvPayload').value;
+    payload = JSON.parse(raw);
+    if (sim && typeof payload === 'object' && payload !== null) {
+      payload._sim = { ...(payload._sim || {}), scenario: sim };
+    }
+  } catch (e) { errBox.textContent = 'payload 不是合法 JSON: ' + e.message; return; }
+
+  const body = { payload };
+  const delay = Number($('dlvDelay').value);
+  if (delay > 0) body.delay_ms = delay;
+  const idem = $('dlvIdem').value.trim();
+  if (idem) body.idempotency_key = idem;
+  try {
+    const d = await api('POST', `/api/events/${selectedEvent}/deliveries`, body);
+    selectedDelivery = d.public_id;
+    renderAll();
+  } catch (e) { errBox.textContent = e.message; }
+}
+
+/* --------------------------------------------- deliveries */
+
+async function loadDeliveries() {
+  if (!selectedEvent) { deliveries = []; return; }
+  deliveries = await api('GET', `/api/events/${selectedEvent}/deliveries`);
+  const box = $('deliveryList');
+  if (!deliveries.length) { box.innerHTML = '<div class="empty">暂无投递</div>'; return; }
+  box.innerHTML = deliveries.map((d) => `
+    <div class="delivery-item ${selectedDelivery === d.public_id ? 'active' : ''}" data-id="${d.public_id}">
+      <span class="badge ${d.status}">${d.status}</span>
+      <span class="info">
+        <div>${d.attempt_count}/${d.max_attempts} 次尝试</div>
+        <div class="idem">${esc(d.idempotency_key)}</div>
+      </span>
+      <span class="muted">${fmt(d.created_at)}</span>
+    </div>`).join('');
+  box.querySelectorAll('.delivery-item').forEach((el) =>
+    el.addEventListener('click', () => { selectedDelivery = el.dataset.id; renderTimeline();
+      el.parentElement.querySelectorAll('.delivery-item').forEach((x) => x.classList.remove('active'));
+      el.classList.add('active'); }));
+}
+
+/* --------------------------------------------- timeline */
+
+async function renderTimeline() {
+  const box = $('timeline');
+  if (!selectedDelivery) { box.innerHTML = '<div class="empty">选择一条投递查看详细时间线</div>'; return; }
+  let d;
+  try { d = await api('GET', '/api/deliveries/' + selectedDelivery); }
+  catch (e) { box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'; return; }
+
+  const html = [`
+    <div class="body" style="padding:12px 14px">
+      <div class="kv">
+        <div><span class="k">delivery</span> <span class="v">${esc(d.public_id)}</span></div>
+        <div><span class="k">idempotency_key</span> <span class="v">${esc(d.idempotency_key)}</span></div>
+        <div><span class="k">status</span> <span class="v"><span class="badge ${d.status}">${d.status}</span></span></div>
+        ${d.last_error ? `<div><span class="k">last_error</span> <span class="v" style="color:var(--red)">${esc(d.last_error)}</span></div>` : ''}
+        ${d.finished_at ? `<div><span class="k">finished</span> <span class="v">${fmt(d.finished_at)}</span></div>` :
+          d.status === 'pending' ? `<div><span class="k">next_run</span> <span class="v">${fmt(d.next_run_at)}</span></div>` : ''}
+      </div>
+      <div class="toolbar">
+        <button class="primary small" id="replayNew">手动重放（新幂等键）</button>
+        <button class="small" id="replaySame">重放（复用幂等键 → 应被去重）</button>
+      </div>
+    </div>`];
+
+  if (!d.attempts.length) {
+    html.push('<div class="empty">尚未发起请求，等待调度器…</div>');
+  } else {
+    html.push(d.attempts.map((a) => {
+      const code = a.response_status || 0;
+      const cls = code >= 200 && code < 300 ? 's2' : code >= 400 && code < 500 ? 's4' : 's5';
+      const headersText = Object.entries(a.request_headers || {})
+        .map(([k, v]) => `${k}: ${v}`).join('\n');
+      return `
+      <div class="attempt">
+        <div class="head">
+          <span class="num">#${a.attempt_no}</span>
+          <span class="status-code ${cls}">${a.response_status ?? '—'}</span>
+          <span class="muted">${esc(a.request_method)} ${esc(a.request_url)}</span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="muted">${a.duration_ms} ms</span>
+          <span class="muted">${fmt(a.started_at)}</span>
+        </div>
+        ${a.error_message ? `<div class="kv" style="color:var(--red)">error: ${esc(a.error_message)}</div>` : ''}
+        <details><summary>请求头（含 X-Signature / X-Idempotency-Key）</summary><pre>${esc(headersText)}</pre></details>
+        <details><summary>请求体</summary><pre>${esc(a.request_body)}</pre></details>
+        ${a.response_headers ? `<details><summary>响应头</summary><pre>${esc(JSON.stringify(a.response_headers, null, 2))}</pre></details>` : ''}
+        ${a.response_body ? `<details open><summary>响应体</summary><pre>${esc(a.response_body)}</pre></details>` : ''}
+      </div>`;
+    }).join(''));
+  }
+  box.innerHTML = html.join('');
+  $('replayNew').onclick = async () => {
+    const nd = await api('POST', `/api/deliveries/${d.public_id}/replay`, {});
+    selectedDelivery = nd.public_id; renderAll();
+  };
+  $('replaySame').onclick = async () => {
+    const nd = await api('POST', `/api/deliveries/${d.public_id}/replay`, { keep_idempotency_key: true });
+    selectedDelivery = nd.public_id; renderAll();
+  };
+}
+
+/* --------------------------------------------- receiver log */
+
+async function loadReceived() {
+  received = await api('GET', '/api/received?limit=30');
+  const box = $('recvLog');
+  if (!received.length) { box.innerHTML = '<div class="empty">暂无接收记录</div>'; return; }
+  box.innerHTML = received.map((r) => {
+    const tag = r.duplicate ? '<span class="tag dup">DUP</span>'
+      : r.accepted ? '<span class="tag ok">ACCEPTED</span>'
+      : '<span class="tag no">REJECTED</span>';
+    return `<div class="recv-row">
+      <div class="line">
+        <span class="status-code ${r.response_status >= 200 && r.response_status < 300 ? 's2' : r.response_status >= 400 ? 's4' : 's0'}">${r.response_status || '—'}</span>
+        ${tag}
+        <span class="muted">${fmt(r.created_at)}</span>
+        ${r.signature_valid ? '' : '<span class="tag no">BAD HMAC</span>'}
+        ${r.reject_reason ? `<span class="muted">${esc(r.reject_reason)}</span>` : ''}
+        ${r.scenario ? `<span class="muted">sim:${esc(r.scenario)}</span>` : ''}
+      </div>
+      <div class="muted" style="font-family:var(--mono);margin-top:3px">${esc(r.idempotency_key || '-')}</div>
+    </div>`;
+  }).join('');
+}
+
+/* --------------------------------------------- polling */
+
+function renderAll() {
+  loadEvents().then(() => { renderEventDetail(); return loadDeliveries(); })
+    .then(() => { renderDeliveriesActive(); return renderTimeline(); })
+    .then(loadReceived)
+    .catch((e) => console.error(e));
+}
+function renderDeliveriesActive() {
+  document.querySelectorAll('.delivery-item').forEach((el) => {
+    el.classList.toggle('active', el.dataset.id === selectedDelivery);
+    el.onclick = () => {
+      selectedDelivery = el.dataset.id;
+      document.querySelectorAll('.delivery-item').forEach((x) => x.classList.remove('active'));
+      el.classList.add('active');
+      renderTimeline();
+    };
+  });
+}
+
+$('createEvBtn').onclick = async () => {
+  const err = $('evError'); err.textContent = '';
+  try {
+    const body = {
+      name: $('evName').value.trim(),
+      signing_secret: $('evSecret').value.trim(),
+      max_retries: Number($('evRetries').value),
+      backoff_base_ms: Number($('evBackoff').value),
+      target_url: $('evTarget').value.trim() || undefined,
+    };
+    if (!body.name) throw new Error('name is required');
+    const e = await api('POST', '/api/events', body);
+    $('evName').value = ''; $('evSecret').value = '';
+    selectedEvent = e.public_id;
+    renderAll();
+  } catch (e) { err.textContent = e.message; }
+};
+
+$('pauseBtn').onclick = () => {
+  paused = !paused;
+  $('pauseBtn').textContent = paused ? '继续' : '暂停';
+  $('liveDot').classList.toggle('paused', paused);
+  $('liveText').textContent = paused ? '已暂停' : '实时刷新';
+};
+
+async function poll() {
+  if (paused) return;
+  try {
+    // Refresh lists only; never rebuild the editor form so user input survives.
+    await loadEvents();
+    await loadDeliveries();
+    await loadReceived();
+    // Auto-refresh timeline unless the user is inspecting an expanded section.
+    if (selectedDelivery && !document.querySelector('.attempt details[open]')) {
+      await renderTimeline();
+    }
+  } catch (e) { console.error(e); }
+}
+
+loadEvents().then(renderEventDetail).then(loadDeliveries).then(renderTimeline).then(loadReceived).catch(console.error);
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
